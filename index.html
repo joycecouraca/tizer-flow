@@ -1,0 +1,313 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  signOut 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  onSnapshot, 
+  setDoc, 
+  getDoc, 
+  query 
+} from 'firebase/firestore';
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer
+} from 'recharts';
+import {
+  Plus, History, LayoutDashboard, Trophy, LogOut, ShieldAlert, Zap, Save
+} from 'lucide-react';
+
+// =========================================================
+// 1. COLE SEU FIREBASE CONFIG AQUI (Pegue no Console do Firebase)
+// =========================================================
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAXzHCgk3u7_p0GNfjsfUWrwz6WTyJJqkg",
+  authDomain: "tirzeflow.firebaseapp.com",
+  projectId: "tirzeflow",
+  storageBucket: "tirzeflow.firebasestorage.app",
+  messagingSenderId: "99575407392",
+  appId: "1:99575407392:web:cf8ff44f2092590e48ed45"
+};
+
+// ID Único do seu App (deve ser o mesmo da rota do banco)
+const appId = 'tirzeflow-pro';
+
+// Inicialização
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const provider = new GoogleAuthProvider();
+
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [isAuthorized, setIsAuthorized] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [records, setRecords] = useState([]);
+  const [ranking, setRanking] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    semana: 1, peso: '', data: new Date().toISOString().split('T')[0]
+  });
+
+  // Listener de Autenticação e Verificação de Whitelist
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      if (u) {
+        // Rota: artifacts/tirzeflow-pro/public/data/authorized_users/{email}
+        const authDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'authorized_users', u.email.toLowerCase());
+        const authDoc = await getDoc(authDocRef);
+        
+        if (authDoc.exists()) {
+          setUser(u);
+          setIsAuthorized(true);
+        } else {
+          setIsAuthorized(false);
+          await signOut(auth);
+        }
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Busca dados privados do usuário logado
+  useEffect(() => {
+    if (!user || !isAuthorized) return;
+    const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'tracking'));
+    return onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(d => d.data());
+      setRecords(data.sort((a, b) => a.semana - b.semana));
+    });
+  }, [user, isAuthorized]);
+
+  // Busca ranking público
+  useEffect(() => {
+    if (!user || !isAuthorized) return;
+    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'ranking'));
+    return onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(d => d.data());
+      setRanking(data.sort((a, b) => b.totalPerdido - a.totalPerdido));
+    });
+  }, [user, isAuthorized]);
+
+  const handleLogin = async () => {
+    try { await signInWithPopup(auth, provider); } catch (e) { console.error(e); }
+  };
+
+  // FUNÇÃO QUE SALVA NO FIREBASE
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+
+    const pesoNum = parseFloat(formData.peso);
+    const imc = (pesoNum / (1.65 * 1.65)).toFixed(2);
+    
+    const record = {
+      ...formData,
+      peso: pesoNum,
+      imc: imc,
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      // 1. Salva no histórico privado do usuário
+      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tracking', `sem-${formData.semana}`), record);
+
+      // 2. Calcula perda total para o Ranking
+      const firstWeight = records.length > 0 ? records[0].peso : pesoNum;
+      const totalPerdido = (firstWeight - pesoNum).toFixed(1);
+
+      // 3. Salva na coleção de ranking público
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ranking', user.uid), {
+        uid: user.uid,
+        nome: user.displayName,
+        foto: user.photoURL,
+        pesoAtual: pesoNum,
+        totalPerdido: parseFloat(totalPerdido),
+        ultimaAtualizacao: new Date().toISOString()
+      });
+
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Erro ao salvar dados:", error);
+    }
+  };
+
+  if (loading) return <div className="h-screen flex items-center justify-center"><Zap className="animate-pulse text-blue-600" /></div>;
+
+  if (!user) return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-slate-50">
+      <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-blue-200">
+        <Zap className="text-white w-10 h-10" fill="currentColor" />
+      </div>
+      <h1 className="text-3xl font-black text-slate-900 mb-2">Tirze<span className="text-blue-600">Flow</span></h1>
+      <p className="text-slate-500 mb-8">Acesso exclusivo para convidados.</p>
+      
+      {isAuthorized === false && (
+        <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-2xl flex items-center gap-2 text-sm border border-red-200">
+          <ShieldAlert size={18} /> E-mail não autorizado no sistema.
+        </div>
+      )}
+
+      <button onClick={handleLogin} className="w-full max-w-xs bg-white border border-slate-200 text-slate-700 font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-sm active:scale-95 transition-all">
+        <img src="https://www.svgrepo.com/show/355037/google.svg" className="w-5 h-5" alt="Google" />
+        Entrar com Google
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="max-w-md mx-auto min-h-screen flex flex-col pb-32 bg-slate-50">
+      {/* Header */}
+      <header className="px-6 py-4 flex items-center justify-between bg-white border-b sticky top-0 z-40">
+        <div className="flex items-center gap-3">
+          <img src={user.photoURL} className="w-10 h-10 rounded-full border" referrerPolicy="no-referrer" />
+          <p className="font-black text-slate-800">{user.displayName.split(' ')[0]}</p>
+        </div>
+        <button onClick={() => signOut(auth)} className="text-slate-300 hover:text-red-500"><LogOut size={20} /></button>
+      </header>
+
+      {/* Conteúdo Dinâmico */}
+      <main className="p-5 space-y-6">
+        {activeTab === 'dashboard' && (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-lg">
+                <p className="text-[10px] font-bold opacity-50 uppercase mb-1">Peso Atual</p>
+                <div className="text-4xl font-black tracking-tighter">
+                  {records.length > 0 ? records[records.length-1].peso : '--'} 
+                  <span className="text-sm font-normal opacity-50 ml-1">kg</span>
+                </div>
+              </div>
+              <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm text-emerald-600">
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Perda Total</p>
+                <div className="text-4xl font-black tracking-tighter">
+                  {records.length > 1 ? (records[0].peso - records[records.length-1].peso).toFixed(1) : '0.0'}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-[32px] border border-slate-100">
+               <h3 className="text-xs font-black text-slate-400 uppercase mb-6 tracking-widest text-center">Gráfico de Evolução</h3>
+               <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={records}>
+                       <XAxis dataKey="semana" hide />
+                       <YAxis hide domain={['dataMin - 1', 'dataMax + 1']} />
+                       <Tooltip contentStyle={{borderRadius: '16px', border: 'none'}} />
+                       <Area type="monotone" dataKey="peso" stroke="#3b82f6" strokeWidth={4} fillOpacity={0.1} fill="#3b82f6" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+               </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'ranking' && (
+          <div className="space-y-4">
+            <h3 className="text-2xl font-black text-slate-800 tracking-tight px-2">Ranking GIP Elite</h3>
+            <div className="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm">
+              {ranking.map((player, idx) => (
+                <div key={player.uid} className={`flex items-center justify-between p-5 border-b border-slate-50 last:border-0 ${player.uid === user.uid ? 'bg-blue-50/50' : ''}`}>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs font-black text-slate-300 w-4">#{idx + 1}</span>
+                    <img src={player.foto} className="w-10 h-10 rounded-full border border-slate-200" referrerPolicy="no-referrer" />
+                    <div>
+                      <div className="text-sm font-black text-slate-800">{player.nome}</div>
+                      <div className="text-[10px] text-slate-400 font-bold uppercase">{player.pesoAtual}kg atuais</div>
+                    </div>
+                  </div>
+                  <div className="bg-emerald-100 text-emerald-600 px-4 py-2 rounded-full text-xs font-black">
+                    -{player.totalPerdido} kg
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'log' && (
+          <div className="space-y-3">
+             <h3 className="text-2xl font-black text-slate-800 px-2">Histórico</h3>
+             {records.slice().reverse().map(rec => (
+               <div key={rec.semana} className="bg-white p-4 rounded-[28px] border border-slate-100 flex justify-between items-center shadow-sm">
+                  <div className="flex gap-4 items-center">
+                    <div className="w-10 h-10 bg-blue-50 rounded-2xl flex flex-col items-center justify-center font-black">
+                      <span className="text-[8px] text-blue-400">SEM</span>
+                      <span className="text-blue-600">{rec.semana}</span>
+                    </div>
+                    <div>
+                      <div className="font-black text-slate-800">{rec.peso} kg</div>
+                      <div className="text-[10px] text-slate-400">{new Date(rec.data).toLocaleDateString('pt-BR')}</div>
+                    </div>
+                  </div>
+                  <div className="text-xs font-black text-slate-600 bg-slate-100 px-3 py-1 rounded-full">IMC {rec.imc}</div>
+               </div>
+             ))}
+          </div>
+        )}
+      </main>
+
+      {/* Botão de Adição */}
+      <button onClick={() => { setFormData({...formData, semana: records.length + 1}); setIsModalOpen(true); }} className="fixed bottom-28 right-6 w-16 h-16 bg-blue-600 text-white rounded-[24px] shadow-2xl flex items-center justify-center z-40 active:scale-90 transition-all border-4 border-white">
+        <Plus size={32} strokeWidth={3} />
+      </button>
+
+      {/* Nav Bar */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-8 pt-4 pb-10 flex justify-between z-30">
+        <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-blue-600' : 'text-slate-300'}`}>
+          <LayoutDashboard size={24} />
+          <span className="text-[9px] font-black uppercase">Home</span>
+        </button>
+        <button onClick={() => setActiveTab('ranking')} className={`flex flex-col items-center gap-1 ${activeTab === 'ranking' ? 'text-blue-600' : 'text-slate-300'}`}>
+          <Trophy size={24} />
+          <span className="text-[9px] font-black uppercase">Rank</span>
+        </button>
+        <button onClick={() => setActiveTab('log')} className={`flex flex-col items-center gap-1 ${activeTab === 'log' ? 'text-blue-600' : 'text-slate-300'}`}>
+          <History size={24} />
+          <span className="text-[9px] font-black uppercase">Histórico</span>
+        </button>
+      </nav>
+
+      {/* Modal de Input */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-end justify-center">
+          <div className="bg-white w-full rounded-t-[40px] p-8 space-y-6 animate-in slide-in-from-bottom duration-300">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-black text-slate-800">Semana {formData.semana}</h2>
+              <button onClick={() => setIsModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-400"><Plus className="rotate-45" /></button>
+            </div>
+            <form onSubmit={handleSave} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Data</label>
+                  <input type="date" value={formData.data} onChange={e => setFormData({...formData, data: e.target.value})} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-bold" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Peso (kg)</label>
+                  <input type="number" step="0.1" value={formData.peso} onChange={e => setFormData({...formData, peso: e.target.value})} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-black text-blue-600 text-xl" required autoFocus />
+                </div>
+              </div>
+              <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-[24px] font-black shadow-xl flex items-center justify-center gap-2">
+                <Save size={20} /> Salvar no Banco
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;
+
