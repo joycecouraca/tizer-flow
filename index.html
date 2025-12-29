@@ -1,313 +1,378 @@
-import React, { useState, useEffect } from 'react';
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged, 
-  signOut 
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  onSnapshot, 
-  setDoc, 
-  getDoc, 
-  query 
-} from 'firebase/firestore';
-import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer
-} from 'recharts';
-import {
-  Plus, History, LayoutDashboard, Trophy, LogOut, ShieldAlert, Zap, Save
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>TirzeFlow Pro</title>
+    <!-- Bibliotecas Externas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    <script src="https://unpkg.com/lucide-react"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+        input[type="date"]::-webkit-inner-spin-button,
+        input[type="date"]::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
 
-// =========================================================
-// 1. COLE SEU FIREBASE CONFIG AQUI (Pegue no Console do Firebase)
-// =========================================================
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        const { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } = Recharts;
+        const { 
+            Plus, History, LayoutDashboard, Trophy, LogOut, 
+            ShieldAlert, Zap, Save, Activity, Scale, Droplet, TrendingDown 
+        } = lucide;
 
-const firebaseConfig = {
-  apiKey: "AIzaSyAXzHCgk3u7_p0GNfjsfUWrwz6WTyJJqkg",
-  authDomain: "tirzeflow.firebaseapp.com",
-  projectId: "tirzeflow",
-  storageBucket: "tirzeflow.firebasestorage.app",
-  messagingSenderId: "99575407392",
-  appId: "1:99575407392:web:cf8ff44f2092590e48ed45"
-};
+        // --- IMPORTAÇÃO FIREBASE ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+        import { getFirestore, collection, doc, onSnapshot, setDoc, getDoc, query } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
-// ID Único do seu App (deve ser o mesmo da rota do banco)
-const appId = 'tirzeflow-pro';
+        // =========================================================
+        // CONFIGURAÇÕES - SUBSTITUA PELAS SUAS CHAVES DO FIREBASE
+        // =========================================================
+        const firebaseConfig = {
+         apiKey: "AIzaSyAXzHCgk3u7_p0GNfjsfUWrwz6WTyJJqkg",
+         authDomain: "tirzeflow.firebaseapp.com",
+         projectId: "tirzeflow",
+         storageBucket: "tirzeflow.firebasestorage.app",
+         messagingSenderId: "99575407392",
+         appId: "1:99575407392:web:cf8ff44f2092590e48ed45"
+         };
 
-// Inicialização
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const provider = new GoogleAuthProvider();
-
-const App = () => {
-  const [user, setUser] = useState(null);
-  const [isAuthorized, setIsAuthorized] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [records, setRecords] = useState([]);
-  const [ranking, setRanking] = useState([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    semana: 1, peso: '', data: new Date().toISOString().split('T')[0]
-  });
-
-  // Listener de Autenticação e Verificação de Whitelist
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      if (u) {
-        // Rota: artifacts/tirzeflow-pro/public/data/authorized_users/{email}
-        const authDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'authorized_users', u.email.toLowerCase());
-        const authDoc = await getDoc(authDocRef);
+        const appId = 'tirzeflow-pro'; // ID usado na rota do Firestore
+        const ALTURA = 1.65;
         
-        if (authDoc.exists()) {
-          setUser(u);
-          setIsAuthorized(true);
-        } else {
-          setIsAuthorized(false);
-          await signOut(auth);
-        }
-      } else {
-        setUser(null);
-      }
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
+        // Inicialização
+        const firebaseApp = initializeApp(firebaseConfig);
+        const auth = getAuth(firebaseApp);
+        const db = getFirestore(firebaseApp);
+        const provider = new GoogleAuthProvider();
 
-  // Busca dados privados do usuário logado
-  useEffect(() => {
-    if (!user || !isAuthorized) return;
-    const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'tracking'));
-    return onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(d => d.data());
-      setRecords(data.sort((a, b) => a.semana - b.semana));
-    });
-  }, [user, isAuthorized]);
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [isAuthorized, setIsAuthorized] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [records, setRecords] = useState([]);
+            const [ranking, setRanking] = useState([]);
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [formData, setFormData] = useState({
+                semana: 1, peso: '', data: new Date().toISOString().split('T')[0]
+            });
 
-  // Busca ranking público
-  useEffect(() => {
-    if (!user || !isAuthorized) return;
-    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'ranking'));
-    return onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(d => d.data());
-      setRanking(data.sort((a, b) => b.totalPerdido - a.totalPerdido));
-    });
-  }, [user, isAuthorized]);
+            // 1. Monitorar Autenticação e Autorização
+            useEffect(() => {
+                const unsubscribe = onAuthStateChanged(auth, async (u) => {
+                    if (u) {
+                        const email = u.email.toLowerCase();
+                        // Rota exata: artifacts/tirzeflow-pro/public/data/authorized_users/{email}
+                        const authDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'authorized_users', email);
+                        try {
+                            const authDoc = await getDoc(authDocRef);
+                            if (authDoc.exists()) {
+                                setUser(u);
+                                setIsAuthorized(true);
+                            } else {
+                                setIsAuthorized(false);
+                                await signOut(auth);
+                            }
+                        } catch (e) {
+                            console.error("Erro ao verificar autorização:", e);
+                            setIsAuthorized(false);
+                        }
+                    } else {
+                        setUser(null);
+                    }
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
 
-  const handleLogin = async () => {
-    try { await signInWithPopup(auth, provider); } catch (e) { console.error(e); }
-  };
+            // 2. Buscar Dados Privados (Histórico do Usuário)
+            useEffect(() => {
+                if (!user || !isAuthorized) return;
+                const q = query(collection(db, 'artifacts', appId, 'users', user.uid, 'tracking'));
+                return onSnapshot(q, (snapshot) => {
+                    const data = snapshot.docs.map(d => d.data());
+                    setRecords(data.sort((a, b) => a.semana - b.semana));
+                });
+            }, [user, isAuthorized]);
 
-  // FUNÇÃO QUE SALVA NO FIREBASE
-  const handleSave = async (e) => {
-    e.preventDefault();
-    if (!user) return;
+            // 3. Buscar Ranking Público
+            useEffect(() => {
+                if (!user || !isAuthorized) return;
+                const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'ranking'));
+                return onSnapshot(q, (snapshot) => {
+                    const data = snapshot.docs.map(d => d.data());
+                    setRanking(data.sort((a, b) => b.totalPerdido - a.totalPerdido));
+                });
+            }, [user, isAuthorized]);
 
-    const pesoNum = parseFloat(formData.peso);
-    const imc = (pesoNum / (1.65 * 1.65)).toFixed(2);
-    
-    const record = {
-      ...formData,
-      peso: pesoNum,
-      imc: imc,
-      updatedAt: new Date().toISOString()
-    };
+            const handleLogin = async () => {
+                try { await signInWithPopup(auth, provider); } catch (e) { console.error(e); }
+            };
 
-    try {
-      // 1. Salva no histórico privado do usuário
-      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tracking', `sem-${formData.semana}`), record);
+            const handleSave = async (e) => {
+                e.preventDefault();
+                if (!user) return;
 
-      // 2. Calcula perda total para o Ranking
-      const firstWeight = records.length > 0 ? records[0].peso : pesoNum;
-      const totalPerdido = (firstWeight - pesoNum).toFixed(1);
+                const pesoNum = parseFloat(formData.peso);
+                const imc = (pesoNum / (ALTURA * ALTURA)).toFixed(2);
+                
+                const record = {
+                    ...formData,
+                    peso: pesoNum,
+                    imc: imc,
+                    updatedAt: new Date().toISOString()
+                };
 
-      // 3. Salva na coleção de ranking público
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ranking', user.uid), {
-        uid: user.uid,
-        nome: user.displayName,
-        foto: user.photoURL,
-        pesoAtual: pesoNum,
-        totalPerdido: parseFloat(totalPerdido),
-        ultimaAtualizacao: new Date().toISOString()
-      });
+                try {
+                    // Salvar registro semanal
+                    await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tracking', `sem-${formData.semana}`), record);
 
-      setIsModalOpen(false);
-    } catch (error) {
-      console.error("Erro ao salvar dados:", error);
-    }
-  };
+                    // Atualizar Ranking
+                    const pesoInicial = records.length > 0 ? records[0].peso : pesoNum;
+                    const totalPerdido = (pesoInicial - pesoNum).toFixed(1);
 
-  if (loading) return <div className="h-screen flex items-center justify-center"><Zap className="animate-pulse text-blue-600" /></div>;
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ranking', user.uid), {
+                        uid: user.uid,
+                        nome: user.displayName,
+                        foto: user.photoURL,
+                        pesoAtual: pesoNum,
+                        totalPerdido: parseFloat(totalPerdido),
+                        ultimaAtualizacao: new Date().toISOString()
+                    });
 
-  if (!user) return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-slate-50">
-      <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-blue-200">
-        <Zap className="text-white w-10 h-10" fill="currentColor" />
-      </div>
-      <h1 className="text-3xl font-black text-slate-900 mb-2">Tirze<span className="text-blue-600">Flow</span></h1>
-      <p className="text-slate-500 mb-8">Acesso exclusivo para convidados.</p>
-      
-      {isAuthorized === false && (
-        <div className="mb-6 p-4 bg-red-100 text-red-700 rounded-2xl flex items-center gap-2 text-sm border border-red-200">
-          <ShieldAlert size={18} /> E-mail não autorizado no sistema.
-        </div>
-      )}
+                    setIsModalOpen(false);
+                } catch (error) {
+                    console.error("Erro ao salvar:", error);
+                }
+            };
 
-      <button onClick={handleLogin} className="w-full max-w-xs bg-white border border-slate-200 text-slate-700 font-bold py-4 rounded-2xl flex items-center justify-center gap-3 shadow-sm active:scale-95 transition-all">
-        <img src="https://www.svgrepo.com/show/355037/google.svg" className="w-5 h-5" alt="Google" />
-        Entrar com Google
-      </button>
-    </div>
-  );
+            const weightLossTotal = useMemo(() => {
+                if (records.length < 2) return "0.0";
+                return (records[0].peso - records[records.length - 1].peso).toFixed(1);
+            }, [records]);
 
-  return (
-    <div className="max-w-md mx-auto min-h-screen flex flex-col pb-32 bg-slate-50">
-      {/* Header */}
-      <header className="px-6 py-4 flex items-center justify-between bg-white border-b sticky top-0 z-40">
-        <div className="flex items-center gap-3">
-          <img src={user.photoURL} className="w-10 h-10 rounded-full border" referrerPolicy="no-referrer" />
-          <p className="font-black text-slate-800">{user.displayName.split(' ')[0]}</p>
-        </div>
-        <button onClick={() => signOut(auth)} className="text-slate-300 hover:text-red-500"><LogOut size={20} /></button>
-      </header>
-
-      {/* Conteúdo Dinâmico */}
-      <main className="p-5 space-y-6">
-        {activeTab === 'dashboard' && (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-lg">
-                <p className="text-[10px] font-bold opacity-50 uppercase mb-1">Peso Atual</p>
-                <div className="text-4xl font-black tracking-tighter">
-                  {records.length > 0 ? records[records.length-1].peso : '--'} 
-                  <span className="text-sm font-normal opacity-50 ml-1">kg</span>
+            if (loading) return (
+                <div className="h-screen flex flex-col items-center justify-center bg-slate-50">
+                    <Zap className="animate-bounce text-blue-600 mb-4" size={48} />
+                    <p className="text-slate-400 font-bold animate-pulse text-xs uppercase tracking-widest">Carregando Fluxo...</p>
                 </div>
-              </div>
-              <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm text-emerald-600">
-                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Perda Total</p>
-                <div className="text-4xl font-black tracking-tighter">
-                  {records.length > 1 ? (records[0].peso - records[records.length-1].peso).toFixed(1) : '0.0'}
-                </div>
-              </div>
-            </div>
+            );
 
-            <div className="bg-white p-6 rounded-[32px] border border-slate-100">
-               <h3 className="text-xs font-black text-slate-400 uppercase mb-6 tracking-widest text-center">Gráfico de Evolução</h3>
-               <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={records}>
-                       <XAxis dataKey="semana" hide />
-                       <YAxis hide domain={['dataMin - 1', 'dataMax + 1']} />
-                       <Tooltip contentStyle={{borderRadius: '16px', border: 'none'}} />
-                       <Area type="monotone" dataKey="peso" stroke="#3b82f6" strokeWidth={4} fillOpacity={0.1} fill="#3b82f6" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-               </div>
-            </div>
-          </>
-        )}
-
-        {activeTab === 'ranking' && (
-          <div className="space-y-4">
-            <h3 className="text-2xl font-black text-slate-800 tracking-tight px-2">Ranking GIP Elite</h3>
-            <div className="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm">
-              {ranking.map((player, idx) => (
-                <div key={player.uid} className={`flex items-center justify-between p-5 border-b border-slate-50 last:border-0 ${player.uid === user.uid ? 'bg-blue-50/50' : ''}`}>
-                  <div className="flex items-center gap-4">
-                    <span className="text-xs font-black text-slate-300 w-4">#{idx + 1}</span>
-                    <img src={player.foto} className="w-10 h-10 rounded-full border border-slate-200" referrerPolicy="no-referrer" />
-                    <div>
-                      <div className="text-sm font-black text-slate-800">{player.nome}</div>
-                      <div className="text-[10px] text-slate-400 font-bold uppercase">{player.pesoAtual}kg atuais</div>
+            if (!user) return (
+                <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-slate-50">
+                    <div className="w-20 h-20 bg-blue-600 rounded-[30px] flex items-center justify-center mb-6 shadow-2xl shadow-blue-200">
+                        <Zap className="text-white w-10 h-10" fill="currentColor" />
                     </div>
-                  </div>
-                  <div className="bg-emerald-100 text-emerald-600 px-4 py-2 rounded-full text-xs font-black">
-                    -{player.totalPerdido} kg
-                  </div>
+                    <h1 className="text-4xl font-black text-slate-900 mb-2 tracking-tighter">Tirze<span className="text-blue-600">Flow</span></h1>
+                    <p className="text-slate-400 mb-10 text-sm">Acesso exclusivo para o grupo GIP Elite.</p>
+                    
+                    {isAuthorized === false && (
+                        <div className="mb-8 p-4 bg-red-50 text-red-600 rounded-2xl flex items-center gap-3 text-xs font-bold border border-red-100 animate-bounce">
+                            <ShieldAlert size={18} /> E-mail não autorizado no sistema.
+                        </div>
+                    )}
+
+                    <button onClick={handleLogin} className="w-full max-w-xs bg-white border border-slate-200 text-slate-700 font-bold py-5 rounded-[24px] flex items-center justify-center gap-3 shadow-sm active:scale-95 transition-all">
+                        <img src="https://www.svgrepo.com/show/355037/google.svg" className="w-5 h-5" alt="Google" />
+                        Entrar com Google
+                    </button>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+            );
 
-        {activeTab === 'log' && (
-          <div className="space-y-3">
-             <h3 className="text-2xl font-black text-slate-800 px-2">Histórico</h3>
-             {records.slice().reverse().map(rec => (
-               <div key={rec.semana} className="bg-white p-4 rounded-[28px] border border-slate-100 flex justify-between items-center shadow-sm">
-                  <div className="flex gap-4 items-center">
-                    <div className="w-10 h-10 bg-blue-50 rounded-2xl flex flex-col items-center justify-center font-black">
-                      <span className="text-[8px] text-blue-400">SEM</span>
-                      <span className="text-blue-600">{rec.semana}</span>
-                    </div>
-                    <div>
-                      <div className="font-black text-slate-800">{rec.peso} kg</div>
-                      <div className="text-[10px] text-slate-400">{new Date(rec.data).toLocaleDateString('pt-BR')}</div>
-                    </div>
-                  </div>
-                  <div className="text-xs font-black text-slate-600 bg-slate-100 px-3 py-1 rounded-full">IMC {rec.imc}</div>
-               </div>
-             ))}
-          </div>
-        )}
-      </main>
+            return (
+                <div className="max-w-md mx-auto min-h-screen flex flex-col pb-32 bg-slate-50">
+                    {/* Header */}
+                    <header className="px-6 py-5 flex items-center justify-between glass sticky top-0 z-40 border-b border-slate-100">
+                        <div className="flex items-center gap-3">
+                            <div className="relative">
+                                <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-white shadow-sm" referrerPolicy="no-referrer" />
+                                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full"></div>
+                            </div>
+                            <div>
+                                <p className="font-black text-slate-900 text-sm leading-tight">{user.displayName.split(' ')[0]}</p>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Membro Elite</p>
+                            </div>
+                        </div>
+                        <button onClick={() => signOut(auth)} className="bg-slate-100 p-2.5 rounded-xl text-slate-400 hover:text-red-500 transition-colors">
+                            <LogOut size={18} />
+                        </button>
+                    </header>
 
-      {/* Botão de Adição */}
-      <button onClick={() => { setFormData({...formData, semana: records.length + 1}); setIsModalOpen(true); }} className="fixed bottom-28 right-6 w-16 h-16 bg-blue-600 text-white rounded-[24px] shadow-2xl flex items-center justify-center z-40 active:scale-90 transition-all border-4 border-white">
-        <Plus size={32} strokeWidth={3} />
-      </button>
+                    <main className="p-5 space-y-6">
+                        {activeTab === 'dashboard' && (
+                            <>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl shadow-slate-200 relative overflow-hidden">
+                                        <div className="relative z-10">
+                                            <p className="text-[10px] font-bold opacity-50 uppercase mb-1 tracking-widest">Peso Atual</p>
+                                            <div className="text-4xl font-black tracking-tighter italic">
+                                                {records.length > 0 ? records[records.length-1].peso : '--'} 
+                                                <span className="text-sm font-normal opacity-50 ml-1">kg</span>
+                                            </div>
+                                        </div>
+                                        <Scale className="absolute -right-4 -bottom-4 text-white/5 w-24 h-24" />
+                                    </div>
+                                    <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative overflow-hidden">
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Perda Total</p>
+                                        <div className="text-4xl font-black tracking-tighter text-emerald-500 italic">
+                                            -{weightLossTotal}
+                                        </div>
+                                        <TrendingDown className="absolute -right-4 -bottom-4 text-emerald-50/50 w-24 h-24" />
+                                    </div>
+                                </div>
 
-      {/* Nav Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-8 pt-4 pb-10 flex justify-between z-30">
-        <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 ${activeTab === 'dashboard' ? 'text-blue-600' : 'text-slate-300'}`}>
-          <LayoutDashboard size={24} />
-          <span className="text-[9px] font-black uppercase">Home</span>
-        </button>
-        <button onClick={() => setActiveTab('ranking')} className={`flex flex-col items-center gap-1 ${activeTab === 'ranking' ? 'text-blue-600' : 'text-slate-300'}`}>
-          <Trophy size={24} />
-          <span className="text-[9px] font-black uppercase">Rank</span>
-        </button>
-        <button onClick={() => setActiveTab('log')} className={`flex flex-col items-center gap-1 ${activeTab === 'log' ? 'text-blue-600' : 'text-slate-300'}`}>
-          <History size={24} />
-          <span className="text-[9px] font-black uppercase">Histórico</span>
-        </button>
-      </nav>
+                                <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Evolução de Fluxo</h3>
+                                        <div className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-black">7 Dias</div>
+                                    </div>
+                                    <div className="h-40 w-full">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={records}>
+                                                <defs>
+                                                    <linearGradient id="colorPeso" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                                <XAxis dataKey="semana" hide />
+                                                <YAxis hide domain={['dataMin - 1', 'dataMax + 1']} />
+                                                <Tooltip 
+                                                    contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} 
+                                                    labelFormatter={(v) => `Semana ${v}`}
+                                                />
+                                                <Area type="monotone" dataKey="peso" stroke="#3b82f6" strokeWidth={4} fillOpacity={1} fill="url(#colorPeso)" />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            </>
+                        )}
 
-      {/* Modal de Input */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-end justify-center">
-          <div className="bg-white w-full rounded-t-[40px] p-8 space-y-6 animate-in slide-in-from-bottom duration-300">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-black text-slate-800">Semana {formData.semana}</h2>
-              <button onClick={() => setIsModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-400"><Plus className="rotate-45" /></button>
-            </div>
-            <form onSubmit={handleSave} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Data</label>
-                  <input type="date" value={formData.data} onChange={e => setFormData({...formData, data: e.target.value})} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-bold" />
+                        {activeTab === 'ranking' && (
+                            <div className="space-y-4">
+                                <div className="px-2">
+                                    <h3 className="text-2xl font-black text-slate-900 tracking-tighter">Elite Ranking</h3>
+                                    <p className="text-xs text-slate-400 font-medium italic">Quem eliminou mais carga até agora.</p>
+                                </div>
+                                <div className="bg-white rounded-[32px] border border-slate-100 overflow-hidden shadow-sm">
+                                    {ranking.map((player, idx) => (
+                                        <div key={player.uid} className={`flex items-center justify-between p-5 border-b border-slate-50 last:border-0 ${player.uid === user.uid ? 'bg-blue-50/40' : ''}`}>
+                                            <div className="flex items-center gap-4">
+                                                <span className={`text-sm font-black w-6 ${idx < 3 ? 'text-amber-500' : 'text-slate-200'}`}>
+                                                    {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                                                </span>
+                                                <img src={player.foto} className="w-10 h-10 rounded-full border-2 border-white shadow-sm" referrerPolicy="no-referrer" />
+                                                <div>
+                                                    <div className="text-sm font-black text-slate-800">{player.nome}</div>
+                                                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{player.pesoAtual}kg Atuais</div>
+                                                </div>
+                                            </div>
+                                            <div className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-2xl text-xs font-black shadow-sm">
+                                                -{player.totalPerdido} kg
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'log' && (
+                            <div className="space-y-4">
+                                <h3 className="text-2xl font-black text-slate-900 tracking-tighter px-2">Timeline</h3>
+                                <div className="space-y-3">
+                                    {records.slice().reverse().map(rec => (
+                                        <div key={rec.semana} className="bg-white p-5 rounded-[28px] border border-slate-100 flex justify-between items-center shadow-sm active:scale-[0.98] transition-all">
+                                            <div className="flex gap-4 items-center">
+                                                <div className="w-12 h-12 bg-slate-900 rounded-2xl flex flex-col items-center justify-center font-black shadow-lg shadow-slate-200">
+                                                    <span className="text-[8px] text-slate-400 uppercase tracking-tighter">Sem</span>
+                                                    <span className="text-white text-lg leading-tight">{rec.semana}</span>
+                                                </div>
+                                                <div>
+                                                    <div className="font-black text-slate-800 text-lg tracking-tight">{rec.peso} kg</div>
+                                                    <div className="text-[10px] text-slate-400 font-bold uppercase">{new Date(rec.data).toLocaleDateString('pt-BR')}</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col items-end gap-1">
+                                                <div className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase italic">IMC {rec.imc}</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Botão Flutuante */}
+                    <button onClick={() => { setFormData({...formData, semana: records.length + 1}); setIsModalOpen(true); }} className="fixed bottom-28 right-6 w-16 h-16 bg-blue-600 text-white rounded-[24px] shadow-2xl shadow-blue-200 flex items-center justify-center z-40 active:scale-90 transition-all border-4 border-white">
+                        <Plus size={32} strokeWidth={3} />
+                    </button>
+
+                    {/* Tab Bar */}
+                    <nav className="fixed bottom-0 left-0 right-0 glass border-t border-slate-100 px-10 pt-4 pb-10 flex justify-between z-30">
+                        <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'dashboard' ? 'text-blue-600 scale-110' : 'text-slate-300'}`}>
+                            <LayoutDashboard size={24} strokeWidth={activeTab === 'dashboard' ? 3 : 2} />
+                            <span className="text-[9px] font-black uppercase tracking-tighter">Fluxo</span>
+                        </button>
+                        <button onClick={() => setActiveTab('ranking')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'ranking' ? 'text-blue-600 scale-110' : 'text-slate-300'}`}>
+                            <Trophy size={24} strokeWidth={activeTab === 'ranking' ? 3 : 2} />
+                            <span className="text-[9px] font-black uppercase tracking-tighter">Elite</span>
+                        </button>
+                        <button onClick={() => setActiveTab('log')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'log' ? 'text-blue-600 scale-110' : 'text-slate-300'}`}>
+                            <History size={24} strokeWidth={activeTab === 'log' ? 3 : 2} />
+                            <span className="text-[9px] font-black uppercase tracking-tighter">Logs</span>
+                        </button>
+                    </nav>
+
+                    {/* Modal */}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-end justify-center p-0">
+                            <div className="bg-white w-full max-w-md rounded-t-[45px] p-8 pb-12 space-y-6 shadow-2xl animate-in slide-in-from-bottom duration-500">
+                                <div className="flex justify-between items-center mb-2">
+                                    <div>
+                                        <h2 className="text-3xl font-black text-slate-900 tracking-tighter leading-none">Novo Log</h2>
+                                        <p className="text-sm text-slate-400 font-bold uppercase tracking-tighter mt-1">Semana {formData.semana}</p>
+                                    </div>
+                                    <button onClick={() => setIsModalOpen(false)} className="bg-slate-100 p-3 rounded-full text-slate-400 hover:text-red-500 transition-colors">
+                                        <Plus className="rotate-45" size={24} />
+                                    </button>
+                                </div>
+                                <form onSubmit={handleSave} className="space-y-5">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Data do Log</label>
+                                            <input type="date" value={formData.data} onChange={e => setFormData({...formData, data: e.target.value})} className="w-full bg-slate-50 p-5 rounded-3xl outline-none font-bold text-slate-700 border border-transparent focus:border-blue-100 transition-all" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Peso Atual (kg)</label>
+                                            <input type="number" step="0.1" value={formData.peso} onChange={e => setFormData({...formData, peso: e.target.value})} className="w-full bg-blue-50/50 p-5 rounded-3xl outline-none font-black text-blue-600 text-2xl border border-transparent focus:border-blue-200 transition-all" required autoFocus />
+                                        </div>
+                                    </div>
+                                    <button type="submit" className="w-full bg-slate-900 text-white py-6 rounded-[30px] font-black shadow-2xl shadow-slate-300 flex items-center justify-center gap-3 active:scale-95 transition-all text-lg">
+                                        <Save size={24} /> Confirmar Dados
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase ml-2 tracking-widest">Peso (kg)</label>
-                  <input type="number" step="0.1" value={formData.peso} onChange={e => setFormData({...formData, peso: e.target.value})} className="w-full bg-slate-50 p-4 rounded-2xl outline-none font-black text-blue-600 text-xl" required autoFocus />
-                </div>
-              </div>
-              <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-[24px] font-black shadow-xl flex items-center justify-center gap-2">
-                <Save size={20} /> Salvar no Banco
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+            );
+        };
 
-export default App;
-
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
